@@ -1,0 +1,18 @@
+services:
+  python:
+    build:
+      context: .
+    working_dir: /app
+    # Optional argument fallbacks for the examples; unset host vars stay unset.
+    environment:
+      - OMNETIC_SA_KEY_PATH
+      - OMNETIC_SA_KID
+      - OMNETIC_DMS_API_URL
+    volumes:
+      - .:/app
+      - uv-cache:/tmp/uv-cache
+      - venv:/opt/venv
+
+volumes:
+  uv-cache:
+  venv:
