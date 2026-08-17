@@ -1,0 +1,66 @@
+# GitLab CI for jwt-generator-python.
+#
+# Mirrors the Makefile targets (test / typecheck / lint) on the pinned dev
+# Python version. The library floor is 3.11+, but CI exercises 3.13 only
+# (the pinned dev image) — the multi-version compatibility matrix is
+# intentionally not run here.
+
+stages:
+  - prepare
+  - quality
+
+default:
+  image: ghcr.io/astral-sh/uv:0.11.31-python3.13-alpine
+
+variables:
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  UV_PROJECT_ENVIRONMENT: "$CI_PROJECT_DIR/.venv"
+
+# Run on merge requests, the default branch, and tags — while avoiding a
+# duplicate pipeline when a branch already has an open merge request.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+# Install dependencies once from the committed lockfile, then hand .venv to the
+# quality jobs. The uv cache is keyed on uv.lock. (The uv base image has no git; add
+# `apk add --no-cache git` here if a VCS-sourced dependency is ever added to the lock.)
+sync:
+  stage: prepare
+  script:
+    - uv sync --frozen
+  cache:
+    key:
+      files:
+        - uv.lock
+    paths:
+      - .uv-cache/
+  artifacts:
+    paths:
+      - .venv/
+    expire_in: 1 hour
+
+# The quality jobs invoke tools via `python -m` rather than the bare `pytest`/`mypy`
+# console scripts: the shims in the shared .venv artifact bake in an absolute install
+# path, so `python -m` (which resolves through the venv's own python) keeps them working
+# regardless of the job's checkout path.
+test:
+  stage: quality
+  needs: ["sync"]
+  script:
+    - uv run --frozen python -m pytest
+
+typecheck:
+  stage: quality
+  needs: ["sync"]
+  script:
+    - uv run --frozen python -m mypy
+
+lint:
+  stage: quality
+  needs: ["sync"]
+  script:
+    - uv run --frozen ruff check
+    - uv run --frozen ruff format --check
